@@ -3,3 +3,6 @@ conda
 
 realtimesst.log
 .realtimesst.log
+
+*__pycache__
+.*__pycache__
