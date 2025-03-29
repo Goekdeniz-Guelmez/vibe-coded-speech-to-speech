@@ -1,0 +1,4 @@
+openai
+pyaudio
+numpy
+RealtimeSTT
