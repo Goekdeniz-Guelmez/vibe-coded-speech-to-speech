@@ -2,3 +2,4 @@ openai
 pyaudio
 numpy
 RealtimeSTT
+PyQt5

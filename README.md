@@ -47,7 +47,17 @@ Ready to dive in and experience vibe coding in action? Here's how to get started
     pip install -r requirements.txt
     ```
 
-5.  **Run the Application:**
+5.  **Run the Terminal Application:**
+    ```bash
+    python sts.py
+    ```
+
+6.  **Run the minimal UI Application:**
+    ```bash
+    python sts.py
+    ```
+
+6.  **Run the UI version 2 Application:**
     ```bash
     python sts.py
     ```
