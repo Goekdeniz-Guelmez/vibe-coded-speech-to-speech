@@ -46,7 +46,7 @@ class SpeechToSpeechSystem:
         self.tts_stream = None
         
         # Initialize RealtimeSTT recorder with modified parameters
-        self.recorder = AudioToTextRecorder()
+        self.recorder = AudioToTextRecorder(post_speech_silence_duration=0.6)
         
         # System prompt for Ollama
         self.SYSTEM_PROMPT = SYSTEM
