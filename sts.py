@@ -8,6 +8,7 @@ import datetime
 import numpy as np
 import concurrent.futures
 import difflib
+import time
 
 now = datetime.datetime.now()
 
@@ -117,6 +118,10 @@ class SpeechToSpeechSystem:
         
     def process_transcription(self, transcription):
         """Process transcribed speech and generate response"""
+        global start_time
+        start_time = time.time()
+        print(f"Starting response generation at: {start_time}")
+
         # Skip processing if the system is speaking, in cooldown period, or initializing TTS
         current_time = time.time()
         if (self.is_speaking or 
@@ -321,6 +326,11 @@ class SpeechToSpeechSystem:
                             start_idx = max(0, i - 3)  # Keep a tiny bit of lead-in
                             break
                     audio_np = audio_np[start_idx:]
+
+                if is_first:
+                    first_chunk_time = time.time()
+                    elapsed_ms = (first_chunk_time - start_time) * 1000
+                    print(f"⏱️ First response chunk generated in {elapsed_ms:.2f} ms")
                 
                 # Check if this chunk ends with a sentence marker
                 is_sentence_end = any(text_chunk.endswith(marker) for marker in self.sentence_end_markers)
@@ -383,6 +393,11 @@ class SpeechToSpeechSystem:
                         # Add a very small pause between chunks for clarity
                         if not is_first:
                             time.sleep(0.01)  # 10ms pause between chunks
+                        
+                        if is_first:
+                            playback_time = time.time()
+                            total_elapsed_ms = (playback_time - start_time) * 1000
+                            print(f"⏱️ TOTAL LATENCY: {total_elapsed_ms:.2f} ms from transcription to first audio")
                             
                         # Play the audio chunk
                         self.tts_stream.write(audio_bytes)
