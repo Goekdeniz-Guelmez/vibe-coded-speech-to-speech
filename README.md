@@ -37,7 +37,7 @@ Ready to dive in and experience vibe coding in action? Here's how to get started
     cd vibe-coded-speech-to-speech
     ```
 
-3.  **Install PortAudio (macOS):**
+3.  **Install PortAudio (macOS), be sure you have HomeBrew installed:**
     ```bash
     brew install portaudio
     ```
