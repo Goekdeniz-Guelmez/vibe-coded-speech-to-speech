@@ -14,9 +14,9 @@ With **vibe-coded-speech-to-speech**, I'm not just building software; I'm *demon
 
 This project brings together some seriously cool tech:
 
-*  **Ollama:** The engine powering my and your local language model. Get it running: [https://olllama.com](https://olllama.com)
-*  **FastAPI:** my and your API backbone, handling the heavy lifting of speech processing and response generation.
-*  **RealtimeSTT (KoljaB):** This is where the magic happens – converting ymy and your voice into text: [https://github.com/KoljaB/RealtimeSTT](https://github.com/KoljaB/RealtimeSTT)
+*  **Ollama:** The engine powering our local language model. Get it running: [https://olllama.com](https://olllama.com). Default is `gemma3`.
+*  **FastAPI:** Our API backbone, handling the heavy lifting of speech processing and response generation.
+*  **RealtimeSTT (KoljaB):** This is where the magic happens – converting your voice into text: [https://github.com/KoljaB/RealtimeSTT](https://github.com/KoljaB/RealtimeSTT)
 *  **Kokoro-FastAPI (remsky):** I'm leveraging this to bring a modern TTS experience: [https://github.com/remsky/Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI)
 
 **Why This Project?**

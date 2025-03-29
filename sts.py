@@ -177,7 +177,7 @@ class SpeechToSpeechSystem:
             self.is_initializing_tts = False
             
             stream = self.ollama_client.chat.completions.create(
-                model='gemma3-tools',
+                model='gemma3',
                 messages=messages,
                 stream=True,
                 temperature=0.7
