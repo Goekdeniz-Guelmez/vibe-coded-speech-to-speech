@@ -22,3 +22,32 @@ This project brings together some seriously cool tech:
 **Why This Project?**
 
 I'm not just building an application; I'm contributing to the evolution of software development.  We believe that vibe coding has the power to unlock creativity and innovation, empowering a new generation of creators.
+
+**Installation**
+
+Ready to dive in and experience vibe coding in action? Here's how to get started:
+
+1.  **Clone the Repository:**
+    ```bash
+    git clone https://github.com/Goekdeniz-Guelmez/vibe-coded-speech-to-speech.git
+    ```
+
+2.  **Navigate to the Project Directory:**
+    ```bash
+    cd vibe-coded-speech-to-speech
+    ```
+
+3.  **Install PortAudio (macOS):**
+    ```bash
+    brew install portaudio
+    ```
+
+4.  **Install Dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+5.  **Run the Application:**
+    ```bash
+    python sts.py
+    ```
