@@ -51,3 +51,55 @@ Ready to dive in and experience vibe coding in action? Here's how to get started
     ```bash
     python sts.py
     ```
+
+**This pipeline**
+
+```mermaid
+graph TD
+    A[User Speech] -->|RealtimeSTT| B[Audio to Text Recorder]
+    B -->|Transcription| C[Process Transcription]
+    
+    C -->|Echo Detection| D{Is Self-Echo?}
+    D -->|Yes| Z[Ignore]
+    D -->|No| E[Generate Response]
+    
+    E -->|OpenAI API| F[Ollama LLM]
+    F -->|Stream Response| G[Text Chunking]
+    
+    G -->|Chunks| H[Thread Pool]
+    H -->|Parallel Processing| I[TTS Generation]
+    I -->|Audio Bytes| J[Audio Queue]
+    
+    J -->|Streaming| K[Audio Playback]
+    K --> L[User Hears Response]
+    
+    M[System State] -->|Controls| C
+    M -->|Updates| N[Cooldown Timer]
+    N -->|Affects| C
+    
+    subgraph "Speech Detection"
+        A
+        B
+    end
+    
+    subgraph "Response Generation"
+        C
+        D
+        E
+        F
+        G
+    end
+    
+    subgraph "Audio Processing"
+        H
+        I
+        J
+        K
+        L
+    end
+    
+    subgraph "State Management"
+        M
+        N
+    end
+```
