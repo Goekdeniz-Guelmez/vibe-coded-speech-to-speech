@@ -1,6 +1,6 @@
 # vibe-coded-speech-to-speech
 
-Almost Real-Time Speech-to-Speech System literally only Vibe Coded using my private Josiefied-Coder-32B model. And with that, welcome to **vibe-coded-speech-to-speech**, a project deeply rooted in the burgeoning field of **vibe coding**. This isn’t just about building a speech-to-speech application; it's about exploring a new way to *create* software – guided by the power of large language models.
+Almost Real-Time Speech-to-Speech System literally only Vibe Coded using my private Josiefied-Coder-32B model, (this took two days, and I did not write one line LMAO). And with that, welcome to **vibe-coded-speech-to-speech**, a project deeply rooted in the burgeoning field of **vibe coding**. This isn’t just about building a speech-to-speech application; it's about exploring a new way to *create* software – guided by the power of large language models.
 
 **What is Vibe Coding?**
 
