@@ -31,8 +31,8 @@ class SpeechToSpeechSystem:
         
         # Initialize Ollama client
         self.ollama_client = OpenAI(
-            base_url='http://localhost:11434/v1/',
-            api_key='ollama',
+            base_url="http://localhost:11434/v1/",
+            api_key="not-needed"
         )
         
         # Initialize TTS client
