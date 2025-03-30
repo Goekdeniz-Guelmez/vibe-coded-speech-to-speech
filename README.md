@@ -6,7 +6,7 @@ Almost Real-Time Speech-to-Speech System literally only Vibe Coded using my priv
 
 Check out this short demo:
 
-<iframe width="560" height="315" src="assets/demo.mov" title="Your Video Title" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowfullscreen></iframe>
+<iframe width="560" height="315" src="https://github.com/Goekdeniz-Guelmez/vibe-coded-speech-to-speech/blob/main/assets/Demo.mov" title="Your Video Title" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowfullscreen></iframe>
 
 ![Speech-to-Speech UI Screenshot](./assets/ui-screenshot-assistant-talking.png)
 
