@@ -4,7 +4,7 @@ Almost Real-Time Speech-to-Speech System literally only Vibe Coded using my priv
 
 ## UI Preview
 
-Check out this short [Demo](./assets/demo.mov)]
+Check out this short [Demo](./assets/demo.mov).
 
 ![Speech-to-Speech UI Screenshot](./assets/ui-screenshot-assistant-talking.png)
 
