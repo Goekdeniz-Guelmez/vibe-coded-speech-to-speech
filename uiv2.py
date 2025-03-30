@@ -4,25 +4,38 @@ import time
 import queue
 import numpy as np
 import pyaudio
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout
-from PyQt5.QtGui import QColor, QPainter, QBrush, QIcon
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QComboBox
+from PyQt5.QtGui import QColor, QPainter, QBrush
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QRectF
 from openai import OpenAI
-import datetime
 import concurrent.futures
 import difflib
+
+from sys_pr import get_system_prompt # you can choose {'base', 'J.A.R.V.I.S.', 'Hal9000', 'Miss Minutes'}
 
 # This class will handle communication between threads
 class Communicator(QObject):
     update_ui = pyqtSignal(bool, float)  # is_assistant_speaking, audio_level
     system_ready = pyqtSignal()  # Signal to indicate system is ready
     update_status = pyqtSignal(str, str)  # message, color
+    change_assistant_color = pyqtSignal(str)  # personality type to change color
 
 class SimpleAudioVisualizer(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.user_color = QColor(255, 140, 0)  # Orange
-        self.assistant_color = QColor(255, 60, 60)  # Red
+        
+        # Define assistant colors for different personalities
+        self.assistant_colors = {
+            'base': QColor(240, 240, 245),  # Off-white
+            'J.A.R.V.I.S.': QColor(30, 144, 255),  # Blue
+            'Hal9000': QColor(255, 30, 30),  # Red
+            'Miss Minutes': QColor(255, 100, 0)  # Darker warm orange
+        }
+        
+        # Default assistant color (base)
+        self.assistant_color = self.assistant_colors['base']
+        
         self.loading_color = QColor(50, 50, 50)  # Dark gray/black for loading
         
         # Start with loading color
@@ -44,6 +57,15 @@ class SimpleAudioVisualizer(QWidget):
         self.system_ready = True
         self.current_color = self.user_color
         self.update()
+    
+    def set_assistant_color(self, personality):
+        """Change the assistant color based on the personality"""
+        if personality in self.assistant_colors:
+            self.assistant_color = self.assistant_colors[personality]
+            # If currently showing assistant, update the color immediately
+            if self.is_assistant_speaking and self.system_ready:
+                self.current_color = self.assistant_color
+                self.update()
     
     def set_state(self, is_assistant_speaking, audio_level):
         """Update the visualizer state"""
@@ -144,20 +166,14 @@ class UISpeechToSpeechSystem:
         # Don't initialize the recorder yet - we'll do it in run()
         self.recorder = None
         
-        # System prompt for Ollama
-        now = datetime.datetime.now()
-        self.SYSTEM_PROMPT = f"""You are a helpful AI assistant, and designed for a real-time speech-to-speech system. Your responses will be directly converted to spoken audio. Therefore, it is critical that your output is clean and easily understandable when spoken aloud.
-
-        Adhere to the following guidelines:
-        *   **No Emojis or Symbols:** Do not include any emojis, symbols, or special characters in your responses.
-        *   **Plain Text Only:**  Your responses should be in plain text. Avoid Markdown formatting, LaTeX, or any other markup languages.
-        *   **Concise and Clear Language:** Use clear, concise language that is easy to understand when spoken. Avoid complex sentence structures or jargon.
-        *   **Direct and Conversational Tone:** Maintain a direct and conversational tone, as if you were speaking directly to a person.
-        *   **Focus on Information Delivery:** Prioritize delivering information clearly and efficiently.
-
-        Current time: {now.strftime("%H:%M")}
-        Current date: {now.strftime("%Y-%m-%d")}
-        Current day: {now.strftime("%A")}"""
+        # System prompt for Ollama - will be set by set_system_prompt
+        self.SYSTEM_PROMPT = ""
+        
+        # Current personality
+        self.current_personality = "base"
+        
+        # Set default system prompt
+        self.set_system_prompt("base")
         
         # Lock for thread safety
         self.lock = threading.Lock()
@@ -206,6 +222,16 @@ class UISpeechToSpeechSystem:
         # Recorder initialization retry count
         self.recorder_init_attempts = 0
         self.max_recorder_init_attempts = 5
+    
+    def set_system_prompt(self, prompt_name):
+        """Set the system prompt based on the selected name"""
+        # Store current personality
+        self.current_personality = prompt_name
+        # Combine with common guidelines
+        self.SYSTEM_PROMPT = get_system_prompt(prompt_name)
+        # Signal to update the assistant color
+        self.communicator.change_assistant_color.emit(prompt_name)
+        return prompt_name
         
     def process_transcription(self, transcription):
         """Process transcribed speech and generate response"""
@@ -691,6 +717,7 @@ class SpeechToSpeechUI(QWidget):
         self.communicator.update_ui.connect(self.update_visualizer)
         self.communicator.system_ready.connect(self.system_ready)
         self.communicator.update_status.connect(self.update_status)
+        self.communicator.change_assistant_color.connect(self.change_assistant_color)
         
         # Initialize the speech system with the communicator
         self.speech_system = UISpeechToSpeechSystem(self.communicator)
@@ -717,6 +744,37 @@ class SpeechToSpeechUI(QWidget):
         self.status_label.setStyleSheet("color: #888888; font-size: 20px;")
         self.status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status_label)
+        
+        # System prompt selector
+        prompt_layout = QHBoxLayout()
+        prompt_label = QLabel('Personality:')
+        prompt_label.setStyleSheet("color: white; font-size: 18px;")
+        prompt_layout.addWidget(prompt_label)
+        
+        self.prompt_selector = QComboBox()
+        self.prompt_selector.setStyleSheet("""
+            QComboBox {
+                background-color: #222222;
+                color: white;
+                border-radius: 15px;
+                font-size: 16px;
+                padding: 8px;
+                min-width: 200px;
+            }
+            QComboBox:hover {
+                background-color: #333333;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #222222;
+                color: white;
+                selection-background-color: #444444;
+                selection-color: white;
+            }
+        """)
+        self.prompt_selector.addItems(['base', 'J.A.R.V.I.S.', 'Hal9000', 'Miss Minutes'])
+        self.prompt_selector.currentTextChanged.connect(self.change_system_prompt)
+        prompt_layout.addWidget(self.prompt_selector)
+        layout.addLayout(prompt_layout)
         
         # Audio visualizer
         self.visualizer = SimpleAudioVisualizer()
@@ -814,6 +872,16 @@ class SpeechToSpeechUI(QWidget):
         layout.addWidget(self.restart_button)
         
         self.setLayout(layout)
+    
+    def change_assistant_color(self, personality):
+        """Change the assistant color based on the personality"""
+        self.visualizer.set_assistant_color(personality)
+    
+    def change_system_prompt(self, prompt_name):
+        """Change the system prompt"""
+        if hasattr(self, 'speech_system'):
+            self.speech_system.set_system_prompt(prompt_name)
+            self.update_status(f"Personality changed to: {prompt_name}", "#00ff00")
     
     def update_visualizer(self, is_assistant_speaking, audio_level):
         """Update the visualizer (called from UI thread)"""

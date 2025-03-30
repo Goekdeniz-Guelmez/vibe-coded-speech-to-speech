@@ -5,7 +5,7 @@ import queue
 import numpy as np
 import pyaudio
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout
-from PyQt5.QtGui import QColor, QPainter, QBrush, QIcon
+from PyQt5.QtGui import QColor, QPainter, QBrush
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QRectF
 from openai import OpenAI
 import datetime
