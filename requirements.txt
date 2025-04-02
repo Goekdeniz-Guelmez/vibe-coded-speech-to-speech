@@ -3,3 +3,4 @@ pyaudio
 numpy
 RealtimeSTT
 PyQt5
+fastapi
