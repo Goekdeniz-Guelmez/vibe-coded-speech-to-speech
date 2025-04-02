@@ -1,30 +1,13 @@
 import threading
 import time
 import queue
+import numpy as np
 import pyaudio
 from openai import OpenAI
-from RealtimeSTT import AudioToTextRecorder
-from sys_pr import get_system_prompt
-import datetime
-import numpy as np
 import concurrent.futures
 import difflib
-import time
 
-now = datetime.datetime.now()
-
-SYSTEM = f"""You are a helpful AI assistant, and designed for a real-time speech-to-speech system. Your responses will be directly converted to spoken audio. Therefore, it is critical that your output is clean and easily understandable when spoken aloud.
-
-Adhere to the following guidelines:
-*   **No Emojis or Symbols:** Do not include any emojis, symbols, or special characters in your responses.
-*   **Plain Text Only:**  Your responses should be in plain text. Avoid Markdown formatting, LaTeX, or any other markup languages.
-*   **Concise and Clear Language:** Use clear, concise language that is easy to understand when spoken. Avoid complex sentence structures or jargon.
-*   **Direct and Conversational Tone:** Maintain a direct and conversational tone, as if you were speaking directly to a person.
-*   **Focus on Information Delivery:** Prioritize delivering information clearly and efficiently.
-
-Current time: {now.strftime("%H:%M")}
-Current date: {now.strftime("%Y-%m-%d")}
-Current day: {now.strftime("%A")}"""
+from sys_pr import get_system_prompt # you can choose {'base', 'J.A.R.V.I.S.', 'Hal9000', 'Miss Minutes'}
 
 class SpeechToSpeechSystem:
     def __init__(self):
@@ -42,18 +25,25 @@ class SpeechToSpeechSystem:
             base_url="http://localhost:8880/v1", 
             api_key="not-needed"
         )
+
+        self.llm_model = "gemma3:latest"
+        self.voice_name = "af_bella"
         
         # Initialize PyAudio for TTS output
         self.pyaudio = pyaudio.PyAudio()
         self.tts_stream = None
         
-        # Initialize RealtimeSTT recorder with modified parameters
-        self.recorder = AudioToTextRecorder(post_speech_silence_duration=0.6)
+        # Don't initialize the recorder yet - we'll do it in run()
+        self.recorder = None
         
-        # Default settings
-        self.SYSTEM_PROMPT = SYSTEM
-        self.llm_model = "gemma3"
-        self.voice_name = "af_bella"
+        # System prompt for Ollama - will be set by set_system_prompt
+        self.SYSTEM_PROMPT = ""
+        
+        # Current personality
+        self.current_personality = "base"
+        
+        # Set default system prompt
+        self.set_system_prompt("base")
         
         # Lock for thread safety
         self.lock = threading.Lock()
@@ -93,39 +83,22 @@ class SpeechToSpeechSystem:
         # Pause listening during TTS initialization
         self.is_initializing_tts = False
         
-    def is_similar_to_recent_response(self, transcription):
-        """Check if the transcription is similar to any recent system response"""
-        if not transcription:
-            return False
-            
-        # Clean the transcription for comparison
-        clean_transcription = transcription.lower().strip()
-        
-        for response in self.recent_responses:
-            clean_response = response.lower().strip()
-            
-            # Check for exact match
-            if clean_transcription == clean_response:
-                return True
-                
-            # Check for high similarity using difflib
-            similarity = difflib.SequenceMatcher(None, clean_transcription, clean_response).ratio()
-            if similarity > 0.7:  # 70% similarity threshold
-                return True
-                
-            # Check if transcription is contained within response
-            if len(clean_transcription) > 5 and clean_transcription in clean_response:
-                return True
-                
-        return False
+        # Recorder initialization retry count
+        self.recorder_init_attempts = 0
+        self.max_recorder_init_attempts = 5
+    
+    def set_system_prompt(self, prompt_name):
+        """Set the system prompt based on the selected name"""
+        # Store current personality
+        self.current_personality = prompt_name
+        # Combine with common guidelines
+        self.SYSTEM_PROMPT = get_system_prompt(prompt_name)
+        return prompt_name
         
     def process_transcription(self, transcription):
         """Process transcribed speech and generate response"""
-        global start_time
-        start_time = time.time()
-        print(f"Starting response generation at: {start_time}")
-
         # Skip processing if the system is speaking, in cooldown period, or initializing TTS
+        # Also skip if microphone is muted
         current_time = time.time()
         if (self.is_speaking or 
             (current_time - self.last_spoke_time < self.cooldown_period) or
@@ -258,6 +231,32 @@ class SpeechToSpeechSystem:
             self.last_spoke_time = time.time()
             print("Listening again...")
     
+    def is_similar_to_recent_response(self, transcription):
+        """Check if the transcription is similar to any recent system response"""
+        if not transcription:
+            return False
+            
+        # Clean the transcription for comparison
+        clean_transcription = transcription.lower().strip()
+        
+        for response in self.recent_responses:
+            clean_response = response.lower().strip()
+            
+            # Check for exact match
+            if clean_transcription == clean_response:
+                return True
+                
+            # Check for high similarity using difflib
+            similarity = difflib.SequenceMatcher(None, clean_transcription, clean_response).ratio()
+            if similarity > 0.7:  # 70% similarity threshold
+                return True
+                
+            # Check if transcription is contained within response
+            if len(clean_transcription) > 5 and clean_transcription in clean_response:
+                return True
+                
+        return False
+    
     def check_and_queue_completed_futures(self, future_to_chunk):
         """Check for completed futures and queue them for playback"""
         done_futures = []
@@ -304,6 +303,8 @@ class SpeechToSpeechSystem:
         try:
             print(f"Generating TTS for: {text_chunk}")
             
+            # Update UI with varying audio levels based on text length
+            audio_level = min(1.0, 0.5 + (len(text_chunk) / 200))
             # Generate speech for the text chunk
             with self.tts_client.audio.speech.with_streaming_response.create(
                 model="kokoro",
@@ -319,6 +320,12 @@ class SpeechToSpeechSystem:
                 # Convert to numpy array for processing
                 audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
                 
+                # Calculate audio level from the actual audio data
+                if len(audio_np) > 0:
+                    rms = np.sqrt(np.mean(np.square(audio_np)))
+                    # Scale and update UI
+                    audio_level = min(1.0, rms * 3.0)
+
                 # Trim silence from the beginning of non-first chunks for smoother transitions
                 if not is_first:
                     # Find the first non-silent sample (threshold of 0.005)
@@ -329,11 +336,6 @@ class SpeechToSpeechSystem:
                             start_idx = max(0, i - 3)  # Keep a tiny bit of lead-in
                             break
                     audio_np = audio_np[start_idx:]
-
-                if is_first:
-                    first_chunk_time = time.time()
-                    elapsed_ms = (first_chunk_time - start_time) * 1000
-                    print(f"⏱️ First response chunk generated in {elapsed_ms:.2f} ms")
                 
                 # Check if this chunk ends with a sentence marker
                 is_sentence_end = any(text_chunk.endswith(marker) for marker in self.sentence_end_markers)
@@ -396,15 +398,10 @@ class SpeechToSpeechSystem:
                         # Add a very small pause between chunks for clarity
                         if not is_first:
                             time.sleep(0.01)  # 10ms pause between chunks
-                        
-                        if is_first:
-                            playback_time = time.time()
-                            total_elapsed_ms = (playback_time - start_time) * 1000
-                            print(f"⏱️ TOTAL LATENCY: {total_elapsed_ms:.2f} ms from transcription to first audio")
                             
                         # Play the audio chunk
                         self.tts_stream.write(audio_bytes)
-                        
+
                     elif item_type == "END_OF_RESPONSE":
                         # End of response reached
                         # Wait a short time to ensure audio is fully played
@@ -426,46 +423,26 @@ class SpeechToSpeechSystem:
         finally:
             self.is_speaking = False
             self.last_spoke_time = time.time()
-
-    def process_transcription_api(self, transcription):
-        """Like process_transcription, but yields raw PCM chunks (real-time API version)"""
-        # Skipping the internal state checks for brevity
-        full_response = ""
-        current_chunk = ""
-
-        messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT},
-            {"role": "user", "content": transcription}
-        ]
-
-        stream = self.ollama_client.chat.completions.create(
-            model=self.llm_model,
-            messages=messages,
-            stream=True,
-            temperature=0.7
-        )
-
-        for chunk in stream:
-            if hasattr(chunk.choices[0], 'delta') and hasattr(chunk.choices[0].delta, 'content'):
-                content = chunk.choices[0].delta.content
-                if content:
-                    full_response += content
-                    current_chunk += content
-
-                    if self.should_process_chunk(current_chunk):
-                        audio_bytes, _ = self.generate_speech(current_chunk.strip())
-                        if audio_bytes:
-                            yield audio_bytes
-                        current_chunk = ""
-
-        # Remaining
-        if current_chunk:
-            audio_bytes, _ = self.generate_speech(current_chunk.strip())
-            if audio_bytes:
-                yield audio_bytes
-
+    
+    def initialize_recorder(self):
+        """Initialize the audio recorder with retry logic"""
+        if self.recorder is not None:
+            return True
+            
+        try:
+            from RealtimeSTT import AudioToTextRecorder
+            print("Initializing audio recorder...")
+            self.recorder = AudioToTextRecorder(post_speech_silence_duration=0.6)
+            time.sleep(0.5)
+            return True
+        except Exception as e:
+            self.recorder_init_attempts += 1
+            error_msg = f"Error initializing recorder (attempt {self.recorder_init_attempts}/{self.max_recorder_init_attempts}): {str(e)}"
+            print(error_msg)
+            time.sleep(2)
+            return False
+    
     def set_config(self, system_prompt=None, model=None, voice=None, persona=None):
-        """Dynamically update STS settings"""
         with self.lock:
             if system_prompt is None:
                 if persona is not None:
@@ -482,30 +459,71 @@ class SpeechToSpeechSystem:
                 self.voice_name = voice
                 print(f"✅ Voice set to: {voice}")
     
+    def mute_mic(self):
+        return True
+    
+    def mute_ass(self):
+        return True
+    
     def run(self):
         """Start the speech-to-speech system"""
         try:
             print("Speech-to-Speech system is running. Press Ctrl+C to stop.")
+            
+            # Initialize the recorder with retry logic
+            recorder_initialized = False
+            while not recorder_initialized and self.recorder_init_attempts < self.max_recorder_init_attempts and self.running:
+                recorder_initialized = self.initialize_recorder()
+                if not recorder_initialized:
+                    time.sleep(2)  # Wait before retrying
+                
             print("Wait until RealtimeSTT says 'speak now'")
             
+            # Give a moment for the system to stabilize
+            time.sleep(1)
+                        
             # Main loop
             while self.running:
                 try:
-                    # Only listen when not speaking or in cooldown
+                    # Only listen when not speaking or in cooldown and not muted
                     if not self.is_speaking and (time.time() - self.last_spoke_time > self.cooldown_period) and not self.is_initializing_tts:
-                        # This will call process_transcription when speech is detected and transcribed
-                        self.recorder.text(self.process_transcription)
+                        # Add error handling around the recorder usage
+                        try:
+                            # This will call process_transcription when speech is detected and transcribed
+                            self.recorder.text(self.process_transcription)
+                        except EOFError as e:
+                            error_msg = f"Connection error in recorder: {str(e)}"
+                            print(error_msg)
+                            time.sleep(1)
+                            # Reinitialize the recorder
+                            self.recorder = None
+                            self.initialize_recorder()
+                            time.sleep(0.5)
+                        except ConnectionResetError as e:
+                            error_msg = f"Connection reset: {str(e)}"
+                            print(error_msg)
+                            time.sleep(1)
+                            # Reinitialize the recorder
+                            self.recorder = None
+                            self.initialize_recorder()
+                            time.sleep(0.5)
+                        except Exception as e:
+                            error_msg = f"Error in speech recording: {str(e)}"
+                            print(error_msg)
+                            time.sleep(0.5)
                     else:
                         # Small sleep to prevent CPU hogging during speaking/cooldown
                         time.sleep(0.05)
                 except Exception as e:
-                    print(f"Error in speech recording: {e}")
+                    error_msg = f"Error in main loop: {str(e)}"
+                    print(error_msg)
                     time.sleep(0.5)
                     
         except KeyboardInterrupt:
             print("Stopping...")
         except Exception as e:
-            print(f"Error in main loop: {e}")
+            error_msg = f"Error in main loop: {str(e)}"
+            print(error_msg)
         finally:
             self.cleanup()
     
@@ -521,7 +539,8 @@ class SpeechToSpeechSystem:
         self.executor.shutdown()
         print("System stopped.")
 
-# Run the system
-if __name__ == "__main__":
-    system = SpeechToSpeechSystem()
-    system.run()
+# if __name__ == "__main__":
+#     import multiprocessing
+#     multiprocessing.freeze_support()
+#     system = SpeechToSpeechSystem()
+#     system.run()

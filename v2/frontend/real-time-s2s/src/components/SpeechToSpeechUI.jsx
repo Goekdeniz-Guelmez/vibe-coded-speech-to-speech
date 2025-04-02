@@ -1,28 +1,15 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MicOff, VolumeX, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-
-const personaColors = {
-  base: {
-    gradient: 'linear-gradient(135deg, #fff7e6 0%, #ffe0b2 50%, #ffb347 100%)',
-    glow: '0 0 60px 10px rgba(255, 179, 71, 0.35)'
-  },
-  jarvis: {
-    gradient: 'linear-gradient(135deg, #cfe8ff 0%, #70b7ff 50%, #007BFF 100%)',
-    glow: '0 0 80px 12px rgba(0, 123, 255, 0.5)'
-  },
-  hal9000: {
-    gradient: 'linear-gradient(135deg, #ffcccc 0%, #ff6666 50%, #cc0000 100%)',
-    glow: '0 0 80px 12px rgba(204, 0, 0, 0.6)'
-  },
-  missminutes: {
-    gradient: 'linear-gradient(135deg, #ffebb3 0%, #ffc266 50%, #e69500 100%)',
-    glow: '0 0 80px 12px rgba(230, 149, 0, 0.5)'
-  }
-};
 
 export default function SpeechToSpeechUI() {
   const [isReady, setIsReady] = useState(false);
@@ -34,12 +21,11 @@ export default function SpeechToSpeechUI() {
 
   const [persona, setPersona] = useState("base");
   const [systemPrompt, setSystemPrompt] = useState("You are a helpful AI assistant.");
-  const [voice, setVoice] = useState("af_bella");
-  const [model, setModel] = useState("gemma3");
+  const [voice, setVoice] = useState("");
+  const [model, setModel] = useState("");
+  const [availableVoices, setAvailableVoices] = useState([]);
+  const [availableModels, setAvailableModels] = useState([]);
   const [grainPosition, setGrainPosition] = useState("0% 0%");
-  const [connectionState, setConnectionState] = useState(0);
-
-  const socketRef = useRef(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsReady(true), 2000);
@@ -50,64 +36,89 @@ export default function SpeechToSpeechUI() {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const level = micMuted ? 1 : 1 + Math.random() * 0.1;
-      setAudioLevel(level);
+    const socket = new WebSocket("ws://localhost:8000/ws/state");
+    socket.onmessage = (event) => {
+      const state = parseInt(event.data);
+      if (state === 2) setAudioLevel(1.4);
+      else if (state === 1) setAudioLevel(1.2);
+      else setAudioLevel(1);
+    };
+    return () => socket.close();
+  }, []);
 
-      const randX = Math.floor(Math.random() * 100);
-      const randY = Math.floor(Math.random() * 100);
-      setGrainPosition(`${randX}% ${randY}%`);
-    }, 250);
-    return () => clearInterval(interval);
-  }, [micMuted]);
+  useEffect(() => {
+    fetch("http://localhost:8000/get-config")
+      .then((res) => res.json())
+      .then((data) => {
+        setSystemPrompt(data.system_prompt || "");
+        setModel(data.model || "");
+        setVoice(data.voice || "");
+        setPersona(data.persona || "base");
+      });
+  }, []);
+
+  useEffect(() => {
+    const fetchVoicesAndModels = async () => {
+      try {
+        // Fetch voices
+        const voicesRes = await fetch("http://localhost:8880/v1/audio/voices");
+        const voicesData = await voicesRes.json();
+        setAvailableVoices(Array.isArray(voicesData?.voices) ? voicesData.voices : []);
+  
+        // Fetch models
+        const modelsRes = await fetch("http://localhost:11434/api/tags");
+        const modelsData = await modelsRes.json();
+        setAvailableModels(Array.isArray(modelsData?.models) ? modelsData.models.map(m => m.name) : []);
+      } catch (err) {
+        console.error("Error fetching voices/models", err);
+      }
+    };
+  
+    fetchVoicesAndModels();
+  }, []);
+
+  const gradientLight = "linear-gradient(135deg, #fff7e6 0%, #ffe0b2 50%, #ffb347 100%)";
+  const gradientDark = "linear-gradient(135deg, #ffddb0 0%, #ffb347 50%, #FFA500 100%)";
+  const glowLight = "0 0 60px 10px rgba(255, 179, 71, 0.35)";
+  const glowDark = "0 0 80px 12px rgba(255, 140, 0, 0.5)";
 
   const handleSaveSettings = async () => {
-    await fetch("http://localhost:8000/configure", {
+    await fetch("http://localhost:8000/update-config", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ persona, system_prompt: systemPrompt, voice, model })
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        persona,
+        system_prompt: persona === "custom" ? systemPrompt : undefined,
+        voice,
+        model,
+      }),
     });
     setSettingsOpen(false);
-    connectWebSocket();
   };
 
-  const connectWebSocket = () => {
-    if (socketRef.current) socketRef.current.close();
-    const socket = new WebSocket("ws://localhost:8000/realtime-sts");
-    socketRef.current = socket;
+  const toggleSettings = async () => {
+  setSettingsOpen((prev) => !prev);
 
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === "state") setConnectionState(msg.value);
-      } catch (_) {}
-    };
-
-    socket.onerror = (err) => {
-      console.error("WebSocket Error:", err);
-      setConnectionState(0);
-    };
-  };
-
-  const getVisuals = () => {
-    const personaVisual = personaColors[persona.toLowerCase()] || personaColors.base;
-    let brightness = 1;
-    if (connectionState === 0) brightness = 0.7;
-    else if (connectionState === 2) brightness = 1.3;
-
-    return {
-      background: `${personaVisual.gradient}`,
-      glow: `${personaVisual.glow}`,
-      brightness: brightness
-    };
-  };
-
-  const { background, glow, brightness } = getVisuals();
+  if (!settingsOpen) {
+    try {
+      const res = await fetch("http://localhost:8000/get-config");
+      const data = await res.json();
+      setSystemPrompt(data.system_prompt || "");
+      setModel(data.model || "");
+      setVoice(data.voice || "");
+      setPersona(data.persona || "base");
+    } catch (err) {
+      console.error("Failed to fetch config", err);
+    }
+  }
+};
 
   return (
-    <div className={`min-h-screen flex flex-col items-center justify-center relative px-4 ${isDarkMode ? 'bg-black' : 'bg-white'}`}> 
+    <div className={`min-h-screen flex flex-col items-center justify-center relative px-4 ${isDarkMode ? "bg-black" : "bg-white"}`}>
       <div className="absolute top-6 right-6 z-50">
-        <Button onClick={() => setSettingsOpen(prev => !prev)} variant="ghost">
+        <Button onClick={toggleSettings} variant="ghost">
           <Settings className="w-6 h-6" />
         </Button>
       </div>
@@ -119,11 +130,11 @@ export default function SpeechToSpeechUI() {
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: audioLevel }}
           transition={{ duration: 0.3, ease: "easeInOut" }}
-          style={{ boxShadow: glow, filter: `brightness(${brightness})` }}
+          style={{ boxShadow: isDarkMode ? glowDark : glowLight }}
         >
           <motion.div
             className="absolute inset-0 bg-[length:200%_200%]"
-            style={{ backgroundImage: background }}
+            style={{ backgroundImage: isDarkMode ? gradientDark : gradientLight }}
             animate={{ backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"] }}
             transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
           />
@@ -181,8 +192,8 @@ export default function SpeechToSpeechUI() {
                   <SelectContent>
                     <SelectItem value="base">Base</SelectItem>
                     <SelectItem value="jarvis">J.A.R.V.I.S.</SelectItem>
-                    <SelectItem value="hal9000">Hal9000</SelectItem>
-                    <SelectItem value="missminutes">Miss Minutes</SelectItem>
+                    <SelectItem value="josie">J.O.S.I.E.</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -201,8 +212,9 @@ export default function SpeechToSpeechUI() {
                     <SelectValue placeholder="Select voice" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="af_bella">af_bella</SelectItem>
-                    <SelectItem value="af_sky">af_sky</SelectItem>
+                    {availableVoices.map((v) => (
+                      <SelectItem key={v} value={v}>{v}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
 
@@ -212,15 +224,14 @@ export default function SpeechToSpeechUI() {
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="gemma3">gemma3</SelectItem>
-                    <SelectItem value="gemma3:12b">gemma3:12b</SelectItem>
-                    <SelectItem value="qwen2.5">qwen2.5</SelectItem>
-                    <SelectItem value="qwen2.5:3b">qwen2.5:3b</SelectItem>
+                    {availableModels.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
 
                 <Button className="mt-4" onClick={handleSaveSettings}>
-                  Save Settings & Connect
+                  Save Settings
                 </Button>
               </div>
             </div>

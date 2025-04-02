@@ -1,55 +1,77 @@
-from fastapi import FastAPI, WebSocket
-from fastapi.middleware.cors import CORSMiddleware
-import asyncio
-import json
+import threading
+import uvicorn
+from fastapi import FastAPI, WebSocket, Request
+from fastapi.responses import JSONResponse
 from s2s_core import SpeechToSpeechSystem
+import asyncio
+from fastapi.middleware.cors import CORSMiddleware
+import multiprocessing
 
-app = FastAPI()
-speech_system = SpeechToSpeechSystem()
+app = FastAPI()  # ✅ Moved up!
 
+# ✅ Now add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3200"],
+    allow_origins=["*"],  # Or ["http://localhost:3002", "http://192.168.0.146:3002"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.websocket("/realtime-sts")
-async def websocket_endpoint(websocket: WebSocket):
+multiprocessing.freeze_support()
+system = SpeechToSpeechSystem()
+system.run()
+
+@app.websocket("/ws/state")
+async def websocket_state_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
-        while True:
-            data = await websocket.receive_text()
-
-            # State: user is speaking
-            await websocket.send_text(json.dumps({"type": "state", "value": 1}))
-
-            while speech_system.is_speaking or speech_system.is_initializing_tts:
-                await asyncio.sleep(0.05)
-
-            # State: assistant is responding
-            await websocket.send_text(json.dumps({"type": "state", "value": 2}))
-
-            loop = asyncio.get_event_loop()
-            audio_chunks = await loop.run_in_executor(None, lambda: list(speech_system.process_transcription_api(data)))
-
-            for chunk in audio_chunks:
-                await websocket.send_bytes(chunk)
-
-            await websocket.send_text(json.dumps({"type": "state", "value": 0}))
-            await websocket.send_text("__END__")
-
+        while system.running:
+            state = 0
+            if system.is_speaking:
+                state = 2
+            elif system.recorder and system.recorder.is_user_speaking:
+                state = 1
+            await websocket.send_text(str(state))
+            await asyncio.sleep(0.25)
     except Exception as e:
-        print(f"🔥 WebSocket error: {e}")
-        await websocket.send_text(json.dumps({"type": "state", "value": 0}))
+        print(f"WebSocket closed: {e}")
 
-@app.post("/configure")
-async def configure_backend(config: dict):
-    speech_system.set_config(
-        system_prompt=config.get("system_prompt"),
-        model=config.get("model"),
-        persona=config.get("persona"),
-        voice=config.get("voice")
-    )
-    return {"status": "ok"}
+@app.post("/update-config")
+async def update_config(request: Request):
+    try:
+        body = await request.json()
+        system.set_config(
+            system_prompt=body.get("system_prompt"),
+            model=body.get("model"),
+            voice=body.get("voice"),
+            persona=body.get("persona")
+        )
+        return JSONResponse({"status": "ok"})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+
+
+@app.get("/get-config")
+async def get_config():
+    return JSONResponse({
+        "system_prompt": system.SYSTEM_PROMPT,
+        "model": system.llm_model,
+        "voice": system.voice_name,
+        "persona": system.current_personality
+    })
+
+
+@app.get("/mute-mic")
+async def mute_microphone():
+    return system.mute_mic()
+
+
+@app.get("/mute-assistant")
+async def mute_assistant():
+    return system.mute_ass()
+
+
+if __name__ == "__main__":
+    threading.Thread(target=system.run, daemon=True).start()
+    uvicorn.run("speech_web:app", host="0.0.0.0", port=8000, reload=False)
