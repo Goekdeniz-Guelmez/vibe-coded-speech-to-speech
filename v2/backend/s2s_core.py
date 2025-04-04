@@ -40,7 +40,7 @@ class SpeechToSpeechSystem:
         self.current_personality = "base"
 
         # System prompt for Ollama - will be set by set_system_prompt
-        self.SYSTEM_PROMPT = self.set_system_prompt(self.current_personality)
+        self.SYSTEM_PROMPT = ""
         
         # Set default system prompt
         self.set_system_prompt(self.current_personality)
@@ -436,13 +436,23 @@ class SpeechToSpeechSystem:
     def mute_mic(self):
         with self.lock:
             if self.recorder is not None:
+                try:
+                    if hasattr(self.recorder, "conn") and self.recorder.conn:
+                        self.recorder.conn.close()
+                    if hasattr(self.recorder, "process") and self.recorder.process:
+                        self.recorder.process.terminate()
+                        self.recorder.process.join()
+                except Exception as e:
+                    print(f"Error stopping recorder: {e}")
                 self.recorder = None
                 print("🎤 Microphone muted.")
                 return {"status": "mic muted"}
             else:
-                self.initialize_recorder()
-                print("🎤 Microphone unmuted.")
-                return {"status": "mic unmuted"}
+                if self.initialize_recorder():
+                    print("🎤 Microphone unmuted.")
+                    return {"status": "mic unmuted"}
+                else:
+                    return {"status": "mic failed to unmute"}
     
     def mute_ass(self):
         with self.lock:
