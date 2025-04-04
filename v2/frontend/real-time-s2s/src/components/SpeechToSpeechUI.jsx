@@ -18,8 +18,8 @@ export default function SpeechToSpeechUI() {
   const [micMuted, setMicMuted] = useState(false);
   const [outputMuted, setOutputMuted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  
-  const [speaker, setSpeaker] = useState("none"); // "user", "assistant", or "none"
+
+  const [speaker, setSpeaker] = useState("none");
 
   const [persona, setPersona] = useState("base");
   const [systemPrompt, setSystemPrompt] = useState("You are a helpful AI assistant.");
@@ -38,27 +38,19 @@ export default function SpeechToSpeechUI() {
   }, []);
 
   useEffect(() => {
-    const socket = new WebSocket("ws://localhost:8000/ws/state");
+    const socket = new WebSocket("ws://127.0.0.1:8000/ws/state");
     socket.onmessage = (event) => {
       const state = event.data;
       if (state === "user") {
         setSpeaker("user");
+        setAudioLevel(1.2);
       } else if (state === "assistant") {
         setSpeaker("assistant");
+        setAudioLevel(1.4);
       } else {
         setSpeaker("none");
+        setAudioLevel(1);
       }
-    };
-    return () => socket.close();
-  }, []);
-
-  useEffect(() => {
-    const socket = new WebSocket("ws://localhost:8000/ws/state");
-    socket.onmessage = (event) => {
-      const state = parseInt(event.data);
-      if (state === 2) setAudioLevel(1.4);
-      else if (state === 1) setAudioLevel(1.2);
-      else setAudioLevel(1);
     };
     return () => socket.close();
   }, []);
@@ -70,7 +62,7 @@ export default function SpeechToSpeechUI() {
 
     const fetchConfig = async () => {
       try {
-        const res = await fetch("http://localhost:8000/get-config");
+        const res = await fetch("http://127.0.0.1:8000/get-config");
         const data = await res.json();
         setSystemPrompt(data.system_prompt || "");
         setModel(data.model || "");
@@ -93,12 +85,10 @@ export default function SpeechToSpeechUI() {
   useEffect(() => {
     const fetchVoicesAndModels = async () => {
       try {
-        // Fetch voices
         const voicesRes = await fetch("http://localhost:8880/v1/audio/voices");
         const voicesData = await voicesRes.json();
         setAvailableVoices(Array.isArray(voicesData?.voices) ? voicesData.voices : []);
-  
-        // Fetch models
+
         const modelsRes = await fetch("http://localhost:11434/api/tags");
         const modelsData = await modelsRes.json();
         setAvailableModels(Array.isArray(modelsData?.models) ? modelsData.models.map(m => m.name) : []);
@@ -106,32 +96,26 @@ export default function SpeechToSpeechUI() {
         console.error("Error fetching voices/models", err);
       }
     };
-  
+
     fetchVoicesAndModels();
   }, []);
 
-  const getBallColor = () => {
-    if (speaker === "user") {
-      return isDarkMode ? "#f0f0f0" : "#0f0f0f"; // off-white for dark mode, off-black for light mode
-    } else if (speaker === "assistant") {
-      const colors = {
-        base: isDarkMode ? "#cc6b00" : "#ffb347",
-        jarvis: isDarkMode ? "#5ab7d3" : "#87ceeb",
-        josie: isDarkMode ? "#aaaaaa" : "#cccccc",
-        miss_minutes: isDarkMode ? "#e85c00" : "#ff6600",
-        hall900: isDarkMode ? "#660000" : "#8b0000",
-        custom: isDarkMode ? "#888888" : "#aaaaaa",
-      };
-      return colors[persona] || "#cccccc";
-    } else {
-      return isDarkMode ? glowDark : glowLight;
-    }
-  };
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const level = micMuted ? 1 : 1 + Math.random() * 0.1;
+      setAudioLevel(level);
 
-  const gradientLight = "linear-gradient(135deg, #fff7e6 0%, #ffe0b2 50%, #ffb347 100%)";
-  const gradientDark = "linear-gradient(135deg, #ffddb0 0%, #ffb347 50%, #FFA500 100%)";
-  const glowLight = "0 0 60px 10px rgba(255, 179, 71, 0.35)";
-  const glowDark = "0 0 80px 12px rgba(255, 140, 0, 0.5)";
+      const randX = Math.floor(Math.random() * 100);
+      const randY = Math.floor(Math.random() * 100);
+      setGrainPosition(`${randX}% ${randY}%`);
+    }, 250);
+    return () => clearInterval(interval);
+  }, [micMuted]);
+
+  const gradientLight = 'linear-gradient(135deg, #fff7e6 0%, #ffe0b2 50%, #ffb347 100%)';
+  const gradientDark = 'linear-gradient(135deg, #ffddb0 0%, #ffb347 50%, #FFA500 100%)';
+  const glowLight = '0 0 60px 10px rgba(255, 179, 71, 0.35)';
+  const glowDark = '0 0 80px 12px rgba(255, 140, 0, 0.5)';
 
   const handleSaveSettings = async () => {
     await fetch("http://localhost:8000/update-config", {
@@ -141,7 +125,7 @@ export default function SpeechToSpeechUI() {
       },
       body: JSON.stringify({
         persona,
-        system_prompt: persona === "custom" ? systemPrompt : undefined,
+        system_prompt: persona === "custom" ? systemPrompt : "",
         voice,
         model,
       }),
@@ -150,24 +134,24 @@ export default function SpeechToSpeechUI() {
   };
 
   const toggleSettings = async () => {
-  setSettingsOpen((prev) => !prev);
+    setSettingsOpen(prev => !prev);
 
-  if (!settingsOpen) {
-    try {
-      const res = await fetch("http://localhost:8000/get-config");
-      const data = await res.json();
-      setSystemPrompt(data.system_prompt || "");
-      setModel(data.model || "");
-      setVoice(data.voice || "");
-      setPersona(data.persona || "base");
-    } catch (err) {
-      console.error("Failed to fetch config", err);
+    if (!settingsOpen) {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/get-config");
+        const data = await res.json();
+        setSystemPrompt(data.system_prompt || "");
+        setModel(data.model || "");
+        setVoice(data.voice || "");
+        setPersona(data.persona || "base");
+      } catch (err) {
+        console.error("Failed to fetch config", err);
+      }
     }
-  }
-};
+  };
 
   return (
-    <div className={`min-h-screen flex flex-col items-center justify-center relative px-4 ${isDarkMode ? "bg-black" : "bg-white"}`}>
+    <div className={`min-h-screen flex flex-col items-center justify-center relative px-4 ${isDarkMode ? 'bg-black' : 'bg-white'}`}> 
       <div className="absolute top-6 right-6 z-50">
         <Button onClick={toggleSettings} variant="ghost">
           <Settings className="w-6 h-6" />
@@ -179,9 +163,12 @@ export default function SpeechToSpeechUI() {
           key="circle"
           className="relative w-40 h-40 rounded-full overflow-hidden"
           initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: audioLevel }}
-          transition={{ duration: 0.3, ease: "easeInOut" }}
-          style={{ boxShadow: `0 0 60px 10px ${getBallColor()}` }}
+          animate={{ 
+            opacity: 1,
+            scale: 1 + (audioLevel - 1) * 1.1  // exaggerates fluctuation around 1
+          }}
+          transition={{ type: "spring", stiffness: 500, damping: 25 }}
+          style={{ boxShadow: isDarkMode ? glowDark : glowLight }}
         >
           <motion.div
             className="absolute inset-0 bg-[length:200%_200%]"
@@ -206,7 +193,15 @@ export default function SpeechToSpeechUI() {
 
       <div className="absolute bottom-8 flex gap-4">
         <Button
-          onClick={() => setMicMuted(!micMuted)}
+          onClick={async () => {
+            const endpoint = micMuted ? "/unmute-mic" : "/mute-mic";
+            try {
+              const res = await fetch(`http://127.0.0.1:8000${endpoint}`);
+              if (res.ok) setMicMuted(!micMuted);
+            } catch (err) {
+              console.error("Mic toggle failed", err);
+            }
+          }}
           variant={micMuted ? "destructive" : "secondary"}
           className="rounded-full px-6"
         >
@@ -215,7 +210,15 @@ export default function SpeechToSpeechUI() {
         </Button>
 
         <Button
-          onClick={() => setOutputMuted(!outputMuted)}
+          onClick={async () => {
+            const endpoint = outputMuted ? "/unmute-assistant" : "/mute-assistant";
+            try {
+              const res = await fetch(`http://127.0.0.1:8000${endpoint}`);
+              if (res.ok) setOutputMuted(!outputMuted);
+            } catch (err) {
+              console.error("Assistant output toggle failed", err);
+            }
+          }}
           variant={outputMuted ? "destructive" : "secondary"}
           className="rounded-full px-6"
         >
@@ -232,12 +235,8 @@ export default function SpeechToSpeechUI() {
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3 }}
             className="fixed inset-0 z-40 flex items-center justify-center"
-            style={{
-              backdropFilter: "blur(16px)",
-              WebkitBackdropFilter: "blur(16px)"
-            }}
           >
-            <div className="w-[90%] max-w-md rounded-2xl p-6 bg-white/20 dark:bg-black/30 border border-white/20 shadow-xl">
+            <div className="w-[90%] max-w-md rounded-2xl p-6 backdrop-blur-2xl bg-white/20 dark:bg-black/30 border border-white/20 shadow-xl">
               <div className="flex flex-col gap-4">
                 <Select value={persona} onValueChange={setPersona}>
                   <label className="text-sm font-medium">Persona</label>
@@ -249,7 +248,7 @@ export default function SpeechToSpeechUI() {
                     <SelectItem value="jarvis">J.A.R.V.I.S.</SelectItem>
                     <SelectItem value="josie">J.O.S.I.E.</SelectItem>
                     <SelectItem value="miss_minutes">Miss Minutes</SelectItem>
-                    <SelectItem value="hall900">Hall900</SelectItem>
+                    <SelectItem value="hall9000">Hall900</SelectItem>
                     <SelectItem value="custom">Custom</SelectItem>
                   </SelectContent>
                 </Select>

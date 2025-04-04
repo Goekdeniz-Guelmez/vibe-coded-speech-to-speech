@@ -12,7 +12,7 @@ app = FastAPI()  # ✅ Moved up!
 # ✅ Now add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Or ["http://localhost:3002", "http://192.168.0.146:3002"]
+    allow_origins=["http://localhost:3002", "http://192.168.0.146:3002"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -20,19 +20,18 @@ app.add_middleware(
 
 multiprocessing.freeze_support()
 system = SpeechToSpeechSystem()
-system.run()
 
 @app.websocket("/ws/state")
 async def websocket_state_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         while system.running:
-            state = 0
+            state = "none"
             if system.is_speaking:
-                state = 2
-            elif system.recorder and system.recorder.is_user_speaking:
-                state = 1
-            await websocket.send_text(str(state))
+                state = "assistant"
+            elif system.is_speaking == False:
+                state = "user"
+            await websocket.send_text(state)
             await asyncio.sleep(0.25)
     except Exception as e:
         print(f"WebSocket closed: {e}")
@@ -41,11 +40,12 @@ async def websocket_state_endpoint(websocket: WebSocket):
 async def update_config(request: Request):
     try:
         body = await request.json()
-        system.set_config(
-            system_prompt=body.get("system_prompt"),
-            model=body.get("model"),
+        print("🔍 Received config:", body)
+        system.restart(
+            personality=body.get("persona"),
+            syst=body.get("system_prompt") or None,
             voice=body.get("voice"),
-            persona=body.get("persona")
+            llm=body.get("model")
         )
         return JSONResponse({"status": "ok"})
     except Exception as e:
@@ -64,14 +64,23 @@ async def get_config():
 
 @app.get("/mute-mic")
 async def mute_microphone():
-    return system.mute_mic()
+    result = system.mute_mic()
+    return JSONResponse(result)
 
 
 @app.get("/mute-assistant")
 async def mute_assistant():
-    return system.mute_ass()
+    result = system.mute_ass()
+    return JSONResponse(result)
 
 
 if __name__ == "__main__":
-    threading.Thread(target=system.run, daemon=True).start()
-    uvicorn.run("speech_web:app", host="0.0.0.0", port=8000, reload=False)
+    try:
+        def background_worker():
+            print("🟢 system.run() started in background thread")
+            system.run()
+        threading.Thread(target=background_worker, daemon=True).start()
+        uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    except KeyboardInterrupt:
+        print("🛑 KeyboardInterrupt received! Stopping system...")
+        system.stop()

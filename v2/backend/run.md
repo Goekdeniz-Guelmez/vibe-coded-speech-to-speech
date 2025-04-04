@@ -4,19 +4,16 @@
    cd v2/backend
    pip install -r requirements.txt
    
-   # Zusätzliche Abhängigkeiten installieren
-   pip install uvicorn websockets
-   
    # Backend starten
-   uvicorn main:app --host 0.0.0.0 --port 8000
+   uvicorn main:app
 ```
 
 
 
 ```shell
-   cd v2/frontend
-   npm install  # Falls noch nicht gemacht
-   npm run dev  # Startet den Entwicklungsserver
+   cd v2/frontend/real-time-s2s
+   npm install
+   npm run dev
 ```
 
 ---

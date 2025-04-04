@@ -4,3 +4,4 @@ pyaudio
 numpy
 openai
 RealtimeSTT
+websockets
