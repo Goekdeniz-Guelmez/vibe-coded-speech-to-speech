@@ -18,6 +18,8 @@ export default function SpeechToSpeechUI() {
   const [micMuted, setMicMuted] = useState(false);
   const [outputMuted, setOutputMuted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  
+  const [speaker, setSpeaker] = useState("none"); // "user", "assistant", or "none"
 
   const [persona, setPersona] = useState("base");
   const [systemPrompt, setSystemPrompt] = useState("You are a helpful AI assistant.");
@@ -33,6 +35,21 @@ export default function SpeechToSpeechUI() {
     setIsDarkMode(match.matches);
     match.addEventListener("change", (e) => setIsDarkMode(e.matches));
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const socket = new WebSocket("ws://localhost:8000/ws/state");
+    socket.onmessage = (event) => {
+      const state = event.data;
+      if (state === "user") {
+        setSpeaker("user");
+      } else if (state === "assistant") {
+        setSpeaker("assistant");
+      } else {
+        setSpeaker("none");
+      }
+    };
+    return () => socket.close();
   }, []);
 
   useEffect(() => {
@@ -93,6 +110,24 @@ export default function SpeechToSpeechUI() {
     fetchVoicesAndModels();
   }, []);
 
+  const getBallColor = () => {
+    if (speaker === "user") {
+      return isDarkMode ? "#f0f0f0" : "#0f0f0f"; // off-white for dark mode, off-black for light mode
+    } else if (speaker === "assistant") {
+      const colors = {
+        base: isDarkMode ? "#cc6b00" : "#ffb347",
+        jarvis: isDarkMode ? "#5ab7d3" : "#87ceeb",
+        josie: isDarkMode ? "#aaaaaa" : "#cccccc",
+        miss_minutes: isDarkMode ? "#e85c00" : "#ff6600",
+        hall900: isDarkMode ? "#660000" : "#8b0000",
+        custom: isDarkMode ? "#888888" : "#aaaaaa",
+      };
+      return colors[persona] || "#cccccc";
+    } else {
+      return isDarkMode ? glowDark : glowLight;
+    }
+  };
+
   const gradientLight = "linear-gradient(135deg, #fff7e6 0%, #ffe0b2 50%, #ffb347 100%)";
   const gradientDark = "linear-gradient(135deg, #ffddb0 0%, #ffb347 50%, #FFA500 100%)";
   const glowLight = "0 0 60px 10px rgba(255, 179, 71, 0.35)";
@@ -146,7 +181,7 @@ export default function SpeechToSpeechUI() {
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: audioLevel }}
           transition={{ duration: 0.3, ease: "easeInOut" }}
-          style={{ boxShadow: isDarkMode ? glowDark : glowLight }}
+          style={{ boxShadow: `0 0 60px 10px ${getBallColor()}` }}
         >
           <motion.div
             className="absolute inset-0 bg-[length:200%_200%]"
@@ -213,6 +248,8 @@ export default function SpeechToSpeechUI() {
                     <SelectItem value="base">Base</SelectItem>
                     <SelectItem value="jarvis">J.A.R.V.I.S.</SelectItem>
                     <SelectItem value="josie">J.O.S.I.E.</SelectItem>
+                    <SelectItem value="miss_minutes">Miss Minutes</SelectItem>
+                    <SelectItem value="hall900">Hall900</SelectItem>
                     <SelectItem value="custom">Custom</SelectItem>
                   </SelectContent>
                 </Select>
