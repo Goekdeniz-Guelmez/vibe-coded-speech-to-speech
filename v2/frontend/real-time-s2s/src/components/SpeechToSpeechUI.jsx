@@ -47,14 +47,30 @@ export default function SpeechToSpeechUI() {
   }, []);
 
   useEffect(() => {
-    fetch("http://localhost:8000/get-config")
-      .then((res) => res.json())
-      .then((data) => {
+    let retryCount = 0;
+    const maxRetries = 5;
+    const retryDelay = 5000;
+
+    const fetchConfig = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/get-config");
+        const data = await res.json();
         setSystemPrompt(data.system_prompt || "");
         setModel(data.model || "");
         setVoice(data.voice || "");
         setPersona(data.persona || "base");
-      });
+      } catch (err) {
+        retryCount++;
+        if (retryCount < maxRetries) {
+          console.warn(`Connection failed. Retrying (${retryCount}/${maxRetries})...`);
+          setTimeout(fetchConfig, retryDelay);
+        } else {
+          alert("⚠️ Trouble connecting to the backend. Please restart the service.");
+        }
+      }
+    };
+
+    fetchConfig();
   }, []);
 
   useEffect(() => {
