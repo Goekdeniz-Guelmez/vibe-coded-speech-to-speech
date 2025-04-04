@@ -181,8 +181,12 @@ export default function SpeechToSpeechUI() {
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3 }}
             className="fixed inset-0 z-40 flex items-center justify-center"
+            style={{
+              backdropFilter: "blur(16px)",
+              WebkitBackdropFilter: "blur(16px)"
+            }}
           >
-            <div className="w-[90%] max-w-md rounded-2xl p-6 backdrop-blur-2xl bg-white/20 dark:bg-black/30 border border-white/20 shadow-xl">
+            <div className="w-[90%] max-w-md rounded-2xl p-6 bg-white/20 dark:bg-black/30 border border-white/20 shadow-xl">
               <div className="flex flex-col gap-4">
                 <Select value={persona} onValueChange={setPersona}>
                   <label className="text-sm font-medium">Persona</label>
