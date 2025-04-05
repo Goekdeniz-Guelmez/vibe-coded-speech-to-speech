@@ -7,7 +7,9 @@ from openai import OpenAI
 import concurrent.futures
 import difflib
 
-from sys_pr import get_system_prompt # you can choose {'base', 'J.A.R.V.I.S.', 'Hal9000', 'Miss Minutes'}
+from sys_pr import get_system_prompt # you can choose {'base', 'josie', 'hall9000', 'miss_minutes', 'josie'}
+import webrtcvad
+from faster_whisper import WhisperModel
 
 class SpeechToSpeechSystem:
     def __init__(self):
@@ -44,6 +46,16 @@ class SpeechToSpeechSystem:
         
         # Set default system prompt
         self.set_system_prompt(self.current_personality)
+
+        # Init VAD and Whisper directly
+        self.vad = webrtcvad.Vad(0)  # Aggressiveness: 0 = chill, 3 = intense
+        self.whisper_model = WhisperModel("base", compute_type="float32")
+
+        # Buffers & constants
+        self.audio_buffer = bytearray()
+        self.speech_frames = bytearray()
+        self.sample_rate = 16000
+        self.frame_duration = 30  # ms
         
         # Lock for thread safety
         self.lock = threading.Lock()
@@ -415,24 +427,6 @@ class SpeechToSpeechSystem:
             self.is_speaking = False
             self.last_spoke_time = time.time()
     
-    def initialize_recorder(self):
-        """Initialize the audio recorder with retry logic"""
-        if self.recorder is not None:
-            return True
-            
-        try:
-            from RealtimeSTT import AudioToTextRecorder
-            print("Initializing audio recorder...")
-            self.recorder = AudioToTextRecorder(device="cpu", compute_type="float32", post_speech_silence_duration=0.6)
-            time.sleep(0.5)
-            return True
-        except Exception as e:
-            self.recorder_init_attempts += 1
-            error_msg = f"Error initializing recorder (attempt {self.recorder_init_attempts}/{self.max_recorder_init_attempts}): {str(e)}"
-            print(error_msg)
-            time.sleep(2)
-            return False
-    
     def mute_mic(self):
         with self.lock:
             if self.recorder is not None:
@@ -485,61 +479,71 @@ class SpeechToSpeechSystem:
             print(f"Persona: {self.current_personality}")
             print(f"Voice: {self.voice_name}")
             print(f"LLM: {self.llm_model}")
-            
-            # Initialize the recorder with retry logic
-            recorder_initialized = False
-            while not recorder_initialized and self.recorder_init_attempts < self.max_recorder_init_attempts and self.running:
-                recorder_initialized = self.initialize_recorder()
-                if not recorder_initialized:
-                    time.sleep(2)  # Wait before retrying
-                
-            print("Wait until RealtimeSTT says 'speak now'")
-            
-            # Give a moment for the system to stabilize
-            time.sleep(1)
-                        
-            # Main loop
-            while self.running:
-                try:
-                    # Only listen when not speaking or in cooldown and not muted
-                    if not self.is_speaking and (time.time() - self.last_spoke_time > self.cooldown_period) and not self.is_initializing_tts:
-                        # Add error handling around the recorder usage
-                        try:
-                            # This will call process_transcription when speech is detected and transcribed
-                            self.recorder.text(self.process_transcription)
-                        except EOFError as e:
-                            error_msg = f"Connection error in recorder: {str(e)}"
-                            print(error_msg)
-                            time.sleep(1)
-                            # Reinitialize the recorder
-                            self.recorder = None
-                            self.initialize_recorder()
-                            time.sleep(0.5)
-                        except ConnectionResetError as e:
-                            error_msg = f"Connection reset: {str(e)}"
-                            print(error_msg)
-                            time.sleep(1)
-                            # Reinitialize the recorder
-                            self.recorder = None
-                            self.initialize_recorder()
-                            time.sleep(0.5)
-                        except Exception as e:
-                            error_msg = f"Error in speech recording: {str(e)}"
-                            print(error_msg)
-                            time.sleep(0.5)
+
+            time.sleep(1)  # Let the system settle
+            print("✅ Speech-to-Speech system is fully initialized and ready to go!")
+
+            def record_callback(in_data, frame_count, time_info, status):
+                if not self.running:
+                    return (None, pyaudio.paComplete)
+                self.audio_buffer.extend(in_data)
+                return (None, pyaudio.paContinue)
+
+            def vad_monitor():
+                frame_size = int(self.sample_rate * self.frame_duration / 1000) * 2  # 16-bit mono
+                silence_count = 0
+                max_silence = 50  #
+                buffer = self.audio_buffer
+                vad = self.vad
+
+                while self.running:
+                    if len(buffer) >= frame_size:
+                        frame = bytes(buffer[:frame_size])
+                        buffer[:] = buffer[frame_size:]
+                        is_speech = vad.is_speech(frame, self.sample_rate)
+
+                        if is_speech:
+                            print("🟢 Voice activity detected: starting to record speech.")
+                            silence_count = 0
+                            self.speech_frames.extend(frame)
+                        else:
+                            silence_count += 1
+                            if silence_count > max_silence and self.speech_frames:
+                                try:
+                                    audio_data = np.frombuffer(self.speech_frames, np.int16).astype(np.float32) / 32768.0
+                                    segments, _ = self.whisper_model.transcribe(audio_data, multilingual=True, vad_filter=True)
+                                    text = " ".join([seg.text for seg in segments])
+                                    self.process_transcription(text)
+                                    print("👂 Listening...")
+                                except Exception as e:
+                                    print(f"Transcription error: {e}")
+                                self.speech_frames = bytearray()
+                                silence_count = 0
                     else:
-                        # Small sleep to prevent CPU hogging during speaking/cooldown
-                        time.sleep(0.05)
-                except Exception as e:
-                    error_msg = f"Error in main loop: {str(e)}"
-                    print(error_msg)
-                    time.sleep(0.5)
-                    
+                        time.sleep(0.01)
+
+            stream = self.pyaudio.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=self.sample_rate,
+                input=True,
+                frames_per_buffer=int(self.sample_rate * self.frame_duration / 1000),
+                stream_callback=record_callback
+            )
+
+            threading.Thread(target=vad_monitor, daemon=True).start()
+            stream.start_stream()
+
+            while self.running:
+                if not self.is_speaking and (time.time() - self.last_spoke_time > self.cooldown_period) and not self.is_initializing_tts:
+                    time.sleep(0.01)
+                else:
+                    time.sleep(0.05)
+
         except KeyboardInterrupt:
             print("Stopping...")
         except Exception as e:
-            error_msg = f"Error in main loop: {str(e)}"
-            print(error_msg)
+            print(f"Error in main loop: {e}")
         finally:
             self.cleanup()
     
@@ -554,3 +558,7 @@ class SpeechToSpeechSystem:
         self.pyaudio.terminate()
         self.executor.shutdown()
         print("System stopped.")
+
+
+sys = SpeechToSpeechSystem()
+sys.run()

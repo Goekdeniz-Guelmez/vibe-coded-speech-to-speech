@@ -3,5 +3,5 @@ uvicorn
 pyaudio
 numpy
 openai
-RealtimeSTT
+faster-whisper
 websockets
