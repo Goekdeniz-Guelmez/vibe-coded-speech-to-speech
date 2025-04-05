@@ -558,7 +558,3 @@ class SpeechToSpeechSystem:
         self.pyaudio.terminate()
         self.executor.shutdown()
         print("System stopped.")
-
-
-sys = SpeechToSpeechSystem()
-sys.run()
