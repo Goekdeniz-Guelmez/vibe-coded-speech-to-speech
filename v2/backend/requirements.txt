@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-pyaudio
-numpy
-openai
-faster-whisper
-websockets
